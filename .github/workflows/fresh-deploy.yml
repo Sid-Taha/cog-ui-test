@@ -1,0 +1,42 @@
+name: Fresh Deploy Next.js
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - run: npm ci
+    
+    - run: npm run build
+      env:
+        NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
+        NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+        NEXT_PUBLIC_COGNITO_REGION: ${{ secrets.COGNITO_REGION }}
+        
+    - run: |
+        mkdir deployment
+        cp -r .next deployment/
+        cp package*.json deployment/
+        tar -czf deployment.tar.gz deployment/
+        
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+        
+    - run: |
+        aws s3 cp deployment.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/latest-deployment.tar.gz
+        echo "✅ Build and upload completed!"
+        echo "Deploy to EC2: aws ssm start-session --target i-0f9aec2dcaa402c86"
