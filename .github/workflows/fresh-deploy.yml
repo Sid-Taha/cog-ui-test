@@ -1,3 +1,4 @@
+# .github\workflows\fresh-deploy.yml
 # Updated GitHub Actions Workflow for Static Export
 
 # Replace your current .github/workflows/deploy.yml with this:
