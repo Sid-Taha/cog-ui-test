@@ -1,4 +1,7 @@
-name: Fresh Deploy Next.js
+# Enhanced GitHub Actions Workflow
+# .github/workflows/deploy.yml
+
+name: Deploy Next.js to EC2
 
 on:
   push:
@@ -6,37 +9,87 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    # 1. Checkout code
+    - name: Checkout code
+      uses: actions/checkout@v4
     
-    - uses: actions/setup-node@v4
+    # 2. Setup Node.js
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
       with:
         node-version: '20'
+        cache: 'npm'
         
-    - run: npm ci
+    # 3. Install dependencies
+    - name: Install dependencies
+      run: npm ci
     
-    - run: npm run build
+    # 4. Build Next.js application
+    - name: Build Next.js application
+      run: npm run build
       env:
         NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
         NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
         NEXT_PUBLIC_COGNITO_REGION: ${{ secrets.COGNITO_REGION }}
         
-    - run: |
-        mkdir deployment
+    # 5. Prepare deployment package
+    - name: Prepare deployment package
+      run: |
+        echo "Creating deployment package..."
+        mkdir -p deployment
         cp -r .next deployment/
         cp package*.json deployment/
-        tar -czf deployment.tar.gz deployment/
         
-    - uses: aws-actions/configure-aws-credentials@v4
+        # Include any other necessary files
+        # cp -r public deployment/ (if you have public assets)
+        # cp next.config.ts deployment/ (if you have custom config)
+        
+        tar -czf latest-deployment.tar.gz deployment/
+        ls -la latest-deployment.tar.gz
+        
+    # 6. Configure AWS credentials
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_REGION }}
         
-    - run: |
-        aws s3 cp deployment.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/latest-deployment.tar.gz
-        echo "✅ Build and upload completed!"
-        echo "Deploy to EC2: aws ssm start-session --target i-0f9aec2dcaa402c86"
+    # 7. Upload to S3
+    - name: Upload deployment package to S3
+      run: |
+        echo "Uploading deployment package to S3..."
+        aws s3 cp latest-deployment.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/latest-deployment.tar.gz
+        echo "✅ Upload to S3 completed!"
+        
+    # 8. Verify EC2 instance is running
+    - name: Verify EC2 instance status
+      run: |
+        echo "Checking EC2 instance status..."
+        STATUS=$(aws ec2 describe-instances \
+          --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
+          --query 'Reservations[0].Instances[0].State.Name' \
+          --output text)
+        echo "Instance status: $STATUS"
+        if [ "$STATUS" != "running" ]; then
+          echo "❌ EC2 instance is not running!"
+          exit 1
+        fi
+        echo "✅ EC2 instance is running"
+        
+    # 9. Deployment summary
+    - name: Deployment Summary
+      run: |
+        echo "🚀 Deployment Summary:"
+        echo "- Build completed successfully"
+        echo "- Package uploaded to S3: s3://${{ secrets.S3_BUCKET_NAME }}/latest-deployment.tar.gz"
+        echo "- EC2 will auto-deploy within 5 minutes"
+        echo "- Application URL: http://$(aws ec2 describe-instances --instance-ids ${{ secrets.EC2_INSTANCE_ID }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)"
+        echo ""
+        echo "To monitor deployment:"
+        echo "- SSH: ssh -i [your-key].pem ec2-user@[instance-ip]"
+        echo "- Logs: tail -f /var/log/auto-deploy-cron.log"
