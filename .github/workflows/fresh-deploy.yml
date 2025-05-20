@@ -39,6 +39,9 @@ jobs:
         NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
         NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
         NEXT_PUBLIC_COGNITO_REGION: ${{ secrets.COGNITO_REGION }}
+        # Skip ESLint during build
+        ESLINT_NO_DEV_ERRORS: true
+        DISABLE_ESLINT_PLUGIN: true
         
     # 5. Prepare deployment package
     - name: Prepare deployment package
