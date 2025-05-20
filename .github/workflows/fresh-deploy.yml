@@ -1,83 +1,72 @@
-# Updated GitHub Actions for SSR Deployment
-# Replace your .github/workflows/fresh-deploy.yml with this:
-
-name: Deploy SSR Next.js to EC2
-
+name: Deploy Next.js to EC2
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     
     steps:
-    # 1. Checkout code
     - name: Checkout code
       uses: actions/checkout@v4
     
-    # 2. Setup Node.js
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'npm'
         
-    # 3. Install dependencies
     - name: Install dependencies
       run: npm ci
     
-    # 4. Build Next.js application (no export for SSR)
     - name: Build Next.js application
       run: npm run build
       env:
         NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
         NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
         NEXT_PUBLIC_COGNITO_REGION: ${{ secrets.COGNITO_REGION }}
-        
-    # 5. Prepare deployment package for SSR
-    - name: Prepare deployment package
+    
+    - name: Set up SSH
       run: |
-        echo "Creating SSR deployment package..."
-        mkdir -p deployment
-        
-        # Copy all necessary files for Next.js SSR
-        cp -r .next deployment/
-        cp -r public deployment/ || echo "No public directory"
-        cp package*.json deployment/
-        cp next.config.ts deployment/ || cp next.config.js deployment/ || echo "No next config"
-        
-        # Create start script
-        echo '#!/bin/bash' > deployment/start.sh
-        echo 'npm install --production' >> deployment/start.sh  
-        echo 'npm run start' >> deployment/start.sh
-        chmod +x deployment/start.sh
-        
-        # Create the deployment archive
-        tar -czf latest-deployment.tar.gz deployment/
-        ls -la latest-deployment.tar.gz
-        
-    # 6. Configure AWS credentials
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
-        
-    # 7. Upload to S3
-    - name: Upload deployment package to S3
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+    
+    - name: Deploy to EC2
       run: |
-        echo "Uploading deployment package to S3..."
-        aws s3 cp latest-deployment.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/latest-deployment.tar.gz
-        echo "✅ Upload to S3 completed!"
+        # Create deployment package
+        tar -czf deployment.tar.gz .next node_modules public package.json package-lock.json next.config.ts
         
-    # 8. Deployment summary
+        # Copy deployment package to EC2
+        scp deployment.tar.gz ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}:/tmp/
+        
+        # Run deployment commands on EC2
+        ssh ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOL'
+          # Stop the current application
+          pm2 stop next-app || echo "App not running yet"
+          
+          # Clean up previous deployment
+          rm -rf /var/www/html/cog-ui-test/.next
+          
+          # Extract the new deployment
+          tar -xzf /tmp/deployment.tar.gz -C /var/www/html/cog-ui-test/
+          
+          # Restart the application
+          cd /var/www/html/cog-ui-test
+          pm2 restart next-app || pm2 start npm --name "next-app" -- start
+          
+          # Clean up
+          rm /tmp/deployment.tar.gz
+          
+          # Ensure Nginx is running
+          sudo systemctl restart nginx
+        EOL
+        
     - name: Deployment Summary
       run: |
-        echo "🚀 SSR Deployment Summary:"
-        echo "- Next.js SSR build completed"
-        echo "- Package uploaded to S3: s3://${{ secrets.S3_BUCKET_NAME }}/latest-deployment.tar.gz"  
-        echo "- EC2 will auto-deploy and run Next.js server"
-        echo "- Application URL: http://$(aws ec2 describe-instances --instance-ids ${{ secrets.EC2_INSTANCE_ID }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text 2>/dev/null || echo '44.200.229.16')"
+        echo "🚀 Deployment Summary:"
+        echo "- Next.js deployment completed"
+        echo "- Application deployed to: http://${{ secrets.EC2_HOST }}"
