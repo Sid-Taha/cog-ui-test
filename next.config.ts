@@ -1,74 +1,29 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  // Enable static export for deployment to EC2
-  output: 'export',
+  // Remove static export - we want SSR!
+  // output: 'export', // REMOVE THIS LINE
   
-  // Add trailing slashes to URLs for better static hosting
-  trailingSlash: true,
-  
-  // Optimize images for static export (disable Next.js image optimization)
-  images: {
-    unoptimized: true
-  },
-  
-  // Configure for static hosting
-  distDir: 'out',
-  
-  // Ensure proper asset handling
-  assetPrefix: process.env.NODE_ENV === 'production' ? '' : '',
-  
-  // Base path if you're deploying to a subdirectory (leave empty for root)
-  basePath: '',
-  
-  // Ignore TypeScript errors during build (for deployment)
+  // Keep these for better compatibility
   typescript: {
     ignoreBuildErrors: true,
   },
   
-  // Ignore ESLint errors during build (for deployment)
   eslint: {
     ignoreDuringBuilds: true,
   },
   
-  // Environment variables that should be available in the browser
+  // Environment variables
   env: {
-    // Add any environment variables you need in the browser here
-    CUSTOM_KEY: process.env.CUSTOM_KEY,
+    NEXT_PUBLIC_COGNITO_USER_POOL_ID: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID,
+    NEXT_PUBLIC_COGNITO_CLIENT_ID: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID,
+    NEXT_PUBLIC_COGNITO_REGION: process.env.NEXT_PUBLIC_COGNITO_REGION,
   },
   
-  // Experimental features (if needed)
-  experimental: {
-    // Add any experimental features you're using
-  },
-  
-  // Webpack configuration (if you need custom webpack settings)
-  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-    // Custom webpack configuration here if needed
-    return config
-  },
-  
-  // Headers configuration
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'Referrer-Policy',
-            value: 'origin-when-cross-origin',
-          },
-        ],
-      },
-    ]
+  // Images for SSR
+  images: {
+    domains: ['localhost'],
+    formats: ['image/avif', 'image/webp'],
   },
 }
 

@@ -1,9 +1,7 @@
-# .github\workflows\fresh-deploy.yml
-# Updated GitHub Actions Workflow for Static Export
+# Updated GitHub Actions for SSR Deployment
+# Replace your .github/workflows/fresh-deploy.yml with this:
 
-# Replace your current .github/workflows/deploy.yml with this:
-
-name: Deploy Static Next.js to EC2
+name: Deploy SSR Next.js to EC2
 
 on:
   push:
@@ -30,39 +28,31 @@ jobs:
     - name: Install dependencies
       run: npm ci
     
-    # 4. Build Next.js application with static export
-    - name: Build and export Next.js application
-      run: |
-        npm run build
-        npm run export || echo "No export script found, using build output"
+    # 4. Build Next.js application (no export for SSR)
+    - name: Build Next.js application
+      run: npm run build
       env:
         NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
         NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
         NEXT_PUBLIC_COGNITO_REGION: ${{ secrets.COGNITO_REGION }}
-        # Skip ESLint during build
-        ESLINT_NO_DEV_ERRORS: true
-        DISABLE_ESLINT_PLUGIN: true
         
-    # 5. Prepare deployment package
+    # 5. Prepare deployment package for SSR
     - name: Prepare deployment package
       run: |
-        echo "Creating deployment package..."
+        echo "Creating SSR deployment package..."
         mkdir -p deployment
         
-        # Copy build output
+        # Copy all necessary files for Next.js SSR
         cp -r .next deployment/
+        cp -r public deployment/ || echo "No public directory"
         cp package*.json deployment/
+        cp next.config.ts deployment/ || cp next.config.js deployment/ || echo "No next config"
         
-        # Copy static files if they exist
-        if [ -d "out" ]; then
-          echo "Found static export in 'out' directory"
-          cp -r out deployment/static-export
-        fi
-        
-        # Copy public files if they exist
-        if [ -d "public" ]; then
-          cp -r public deployment/
-        fi
+        # Create start script
+        echo '#!/bin/bash' > deployment/start.sh
+        echo 'npm install --production' >> deployment/start.sh  
+        echo 'npm run start' >> deployment/start.sh
+        chmod +x deployment/start.sh
         
         # Create the deployment archive
         tar -czf latest-deployment.tar.gz deployment/
@@ -86,8 +76,8 @@ jobs:
     # 8. Deployment summary
     - name: Deployment Summary
       run: |
-        echo "🚀 Deployment Summary:"
-        echo "- Static build completed successfully"
-        echo "- Package uploaded to S3: s3://${{ secrets.S3_BUCKET_NAME }}/latest-deployment.tar.gz"
-        echo "- Static files will be served directly by Nginx"
+        echo "🚀 SSR Deployment Summary:"
+        echo "- Next.js SSR build completed"
+        echo "- Package uploaded to S3: s3://${{ secrets.S3_BUCKET_NAME }}/latest-deployment.tar.gz"  
+        echo "- EC2 will auto-deploy and run Next.js server"
         echo "- Application URL: http://$(aws ec2 describe-instances --instance-ids ${{ secrets.EC2_INSTANCE_ID }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text 2>/dev/null || echo '44.200.229.16')"
