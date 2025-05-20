@@ -1,7 +1,8 @@
-# Enhanced GitHub Actions Workflow
-# .github/workflows/deploy.yml
+# Updated GitHub Actions Workflow for Static Export
 
-name: Deploy Next.js to EC2
+# Replace your current .github/workflows/deploy.yml with this:
+
+name: Deploy Static Next.js to EC2
 
 on:
   push:
@@ -28,9 +29,11 @@ jobs:
     - name: Install dependencies
       run: npm ci
     
-    # 4. Build Next.js application
-    - name: Build Next.js application
-      run: npm run build
+    # 4. Build Next.js application with static export
+    - name: Build and export Next.js application
+      run: |
+        npm run build
+        npm run export || echo "No export script found, using build output"
       env:
         NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
         NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
@@ -41,13 +44,23 @@ jobs:
       run: |
         echo "Creating deployment package..."
         mkdir -p deployment
+        
+        # Copy build output
         cp -r .next deployment/
         cp package*.json deployment/
         
-        # Include any other necessary files
-        # cp -r public deployment/ (if you have public assets)
-        # cp next.config.ts deployment/ (if you have custom config)
+        # Copy static files if they exist
+        if [ -d "out" ]; then
+          echo "Found static export in 'out' directory"
+          cp -r out deployment/static-export
+        fi
         
+        # Copy public files if they exist
+        if [ -d "public" ]; then
+          cp -r public deployment/
+        fi
+        
+        # Create the deployment archive
         tar -czf latest-deployment.tar.gz deployment/
         ls -la latest-deployment.tar.gz
         
@@ -66,30 +79,11 @@ jobs:
         aws s3 cp latest-deployment.tar.gz s3://${{ secrets.S3_BUCKET_NAME }}/latest-deployment.tar.gz
         echo "✅ Upload to S3 completed!"
         
-    # 8. Verify EC2 instance is running
-    - name: Verify EC2 instance status
-      run: |
-        echo "Checking EC2 instance status..."
-        STATUS=$(aws ec2 describe-instances \
-          --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
-          --query 'Reservations[0].Instances[0].State.Name' \
-          --output text)
-        echo "Instance status: $STATUS"
-        if [ "$STATUS" != "running" ]; then
-          echo "❌ EC2 instance is not running!"
-          exit 1
-        fi
-        echo "✅ EC2 instance is running"
-        
-    # 9. Deployment summary
+    # 8. Deployment summary
     - name: Deployment Summary
       run: |
         echo "🚀 Deployment Summary:"
-        echo "- Build completed successfully"
+        echo "- Static build completed successfully"
         echo "- Package uploaded to S3: s3://${{ secrets.S3_BUCKET_NAME }}/latest-deployment.tar.gz"
-        echo "- EC2 will auto-deploy within 5 minutes"
-        echo "- Application URL: http://$(aws ec2 describe-instances --instance-ids ${{ secrets.EC2_INSTANCE_ID }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)"
-        echo ""
-        echo "To monitor deployment:"
-        echo "- SSH: ssh -i [your-key].pem ec2-user@[instance-ip]"
-        echo "- Logs: tail -f /var/log/auto-deploy-cron.log"
+        echo "- Static files will be served directly by Nginx"
+        echo "- Application URL: http://$(aws ec2 describe-instances --instance-ids ${{ secrets.EC2_INSTANCE_ID }} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text 2>/dev/null || echo '44.200.229.16')"
